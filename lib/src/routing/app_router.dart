@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../common_widgets/scaffold_with_navbar.dart';
 import '../features/dashboard/presentation/home_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
+import '../features/transactions/presentation/add_category_screen.dart';
 import '../features/transactions/presentation/add_transaction_screen.dart';
+import '../features/transactions/presentation/manage_categories_screen.dart';
+import '../services/local_db/drift_db.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorAKey = GlobalKey<NavigatorState>(debugLabel: 'shellA');
@@ -36,10 +39,36 @@ final goRouter = GoRouter(
         ),
       ],
     ),
+    // Rute /add-transaction cukup SATU saja yang ini:
     GoRoute(
-      parentNavigatorKey: _rootNavigatorKey, 
+      parentNavigatorKey: _rootNavigatorKey,
       path: '/add-transaction',
-      builder: (context, state) => const AddTransactionScreen(),
+      builder: (context, state) {
+        // Ambil objek transaksi yang dikirim (jika ada)
+        final transactionToEdit = state.extra as Transaction?;
+        return AddTransactionScreen(transactionToEdit: transactionToEdit);
+      },
+    ),
+
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/add-category',
+      builder: (context, state) => const AddCategoryScreen(),
+    ),
+
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/manage-categories',
+      builder: (context, state) => const ManageCategoriesScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/edit-category', // Rute baru untuk edit
+      builder: (context, state) {
+        final categoryToEdit = state.extra as Category;
+        // Pastikan AddCategoryScreen sudah dimodifikasi untuk menerima parameter ini
+        return AddCategoryScreen(categoryToEdit: categoryToEdit);
+      },
     ),
   ],
 );
