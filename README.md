@@ -2,7 +2,7 @@
 
 Aplikasi manajemen keuangan pribadi yang dibangun dengan Flutter. Proyek ini mendemonstrasikan penerapan arsitektur modern, *clean code*, manajemen *state* yang reaktif, dan pengujian otomatis.
 
-![App Banner/Screenshot](screenshots/banner.png)
+![App Banner/Screenshot](screenshot/banner.jpg)
 *(Tip: Ganti ini dengan gambar banner menarik atau kolase screenshot aplikasimu)*
 
 ## ✨ Fitur Unggulan

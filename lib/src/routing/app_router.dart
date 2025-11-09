@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import '../common_widgets/scaffold_with_navbar.dart';
+import '../features/auth/presentation/custom_splash_screen.dart';
 import '../features/dashboard/presentation/home_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
 import '../features/transactions/presentation/add_category_screen.dart';
@@ -16,6 +17,12 @@ final goRouter = GoRouter(
   initialLocation: '/',
   navigatorKey: _rootNavigatorKey,
   routes: [
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/splash',
+      builder: (context, state) => const CustomSplashScreen(),
+    ),
+    
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           ScaffoldWithNavBar(navigationShell: navigationShell),
