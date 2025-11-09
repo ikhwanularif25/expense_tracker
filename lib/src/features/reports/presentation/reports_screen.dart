@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:intl/intl.dart';
@@ -116,30 +117,44 @@ class ReportsScreen extends ConsumerWidget {
                 return Column(
                   children: [
                     AspectRatio(
-                      aspectRatio: 1.5, // Sedikit lebih lebar
-                      child: PieChart(
-                        PieChartData(
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 40,
-                          sections: data.map((item) {
-                            final double value = item['total'];
-                            final percentage = (value / totalSum * 100)
-                                .toStringAsFixed(1);
-                            return PieChartSectionData(
-                              color: Color(item['color']),
-                              value: value,
-                              title: '$percentage%',
-                              radius: 80,
-                              titleStyle: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                      aspectRatio: 1.5,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0.0, end: 1.0),
+                        duration: const Duration(seconds: 1),
+                        curve: Curves.easeOutCirc,
+                        builder: (context, animValue, child) {
+                          return PieChart(
+                            PieChartData(
+                              sectionsSpace: 2,
+                              centerSpaceRadius: 40,
+                              startDegreeOffset: 270,
+                              sections: data.map((item) {
+                                final double originalValue = item['total'];
+                                final double animatedValue =
+                                    originalValue * animValue;
+
+                                final percentage =
+                                    (originalValue / totalSum * 100)
+                                        .toStringAsFixed(1);
+
+                                return PieChartSectionData(
+                                  color: Color(item['color']),
+                                  value: animatedValue,
+                                  title: animValue > 0.5 ? '$percentage%' : '',
+                                  radius: 80,
+                                  titleStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          );
+                        },
                       ),
                     ),
+
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
@@ -148,23 +163,107 @@ class ReportsScreen extends ConsumerWidget {
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
+                    // ... (di dalam ReportsScreen, bagian ListView.builder)
                     Expanded(
-                      child: ListView.builder(
+                      child: ListView.separated(
+                        // Gunakan separated biar lebih rapi
+                        padding: const EdgeInsets.all(16),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 12),
                         itemCount: data.length,
                         itemBuilder: (context, index) {
                           final item = data[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Color(item['color']),
-                              radius: 8,
-                            ),
-                            title: Text(item['category']),
-                            trailing: Text(
-                              currencyFormat.format(item['total']),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
+                          final double percentageValue =
+                              (item['total'] as double) /
+                              totalSum; // Hitung persentase (0.0 - 1.0)
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Baris atas: Nama Kategori dan Jumlah Uang
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        backgroundColor: Color(item['color']),
+                                        radius: 6,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        item['category'],
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Text(currencyFormat.format(item['total'])),
+                                ],
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              // Progress Bar Animasi
+                              LayoutBuilder(
+                                // Butuh LayoutBuilder untuk tahu lebar maksimal
+                                builder: (context, constraints) {
+                                  return Stack(
+                                    children: [
+                                      // Background bar (abu-abu tipis)
+                                      Container(
+                                        height: 6,
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            3,
+                                          ),
+                                        ),
+                                      ),
+                                      // Foreground bar (berwarna & animasi)
+                                      Container(
+                                            height: 6,
+                                            width:
+                                                constraints.maxWidth *
+                                                percentageValue, // Lebar sesuai persentase
+                                            decoration: BoxDecoration(
+                                              color: Color(item['color']),
+                                              borderRadius:
+                                                  BorderRadius.circular(3),
+                                            ),
+                                          )
+                                          .animate(
+                                            delay: (100 * index).ms,
+                                          ) // Delay berurutan tiap item
+                                          .custom(
+                                            // Animasi custom untuk lebar dari 0 ke target
+                                            duration: 1000.ms,
+                                            curve: Curves.easeOutExpo,
+                                            builder: (context, value, child) {
+                                              // value berjalan dari 0.0 ke 1.0
+                                              return Container(
+                                                height: 6,
+                                                // Lebar tumbuh dari 0 sampai target
+                                                width:
+                                                    constraints.maxWidth *
+                                                    percentageValue *
+                                                    value,
+                                                decoration: BoxDecoration(
+                                                  color: Color(item['color']),
+                                                  borderRadius:
+                                                      BorderRadius.circular(3),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
                           );
                         },
                       ),
