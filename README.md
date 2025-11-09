@@ -21,17 +21,14 @@ Aplikasi manajemen keuangan pribadi yang dibangun dengan Flutter untuk mendemons
 
 ## 📂 Struktur Proyek
 Proyek ini menggunakan pendekatan **Feature-First Layered Architecture**:
-lib/src/ ├── common_widgets/ # Widget yang dipakai ulang (Reusable UI)
-         ├── constants/ # Tema, warna, gaya teks
-         ├── features/ # Fitur utama aplikasi
-         │  ├── dashboard/ # UI ringkasan & home           
-         │  ├── transactions/ # CRUD transaksi & repository
-         │  └── reports/ # Visualisasi chart
-         ├── routing/ # Konfigurasi navigasi (GoRouter)
-         └── services/ # Layanan global (Database Drift)
+![Directory](screenshot\directory.png)
 
 ## 🚀 Cara Menjalankan
 1.  Clone repositori ini.
 2.  Jalankan `flutter pub get`.
 3.  Jalankan `dart run build_runner build` untuk generate file database.
 4.  Jalankan `flutter run`.
+
+## 📸 Screenshots
+
+![Dashboard](screenshot\dashboard.jpg) | ![Laporan](screenshot\laporan.jpg)
