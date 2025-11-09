@@ -21,13 +21,13 @@ Aplikasi manajemen keuangan pribadi yang dibangun dengan Flutter untuk mendemons
 
 ## 📂 Struktur Proyek
 Proyek ini menggunakan pendekatan **Feature-First Layered Architecture**:
-lib/src/ ├── common_widgets/ # Widget yang dipakai ulang (Reusable UI) 
-         ├── constants/ # Tema, warna, gaya teks 
-         ├── features/ # Fitur utama aplikasi 
-         │                                     ├── dashboard/ # UI ringkasan & home            
-         │                                     ├── transactions/ # CRUD transaksi & repository 
-         │                                     └── reports/ # Visualisasi chart          
-         ├── routing/ # Konfigurasi navigasi (GoRouter) 
+lib/src/ ├── common_widgets/ # Widget yang dipakai ulang (Reusable UI)
+         ├── constants/ # Tema, warna, gaya teks
+         ├── features/ # Fitur utama aplikasi
+         │  ├── dashboard/ # UI ringkasan & home           
+         │  ├── transactions/ # CRUD transaksi & repository
+         │  └── reports/ # Visualisasi chart
+         ├── routing/ # Konfigurasi navigasi (GoRouter)
          └── services/ # Layanan global (Database Drift)
 
 ## 🚀 Cara Menjalankan
