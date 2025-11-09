@@ -21,7 +21,7 @@ Aplikasi manajemen keuangan pribadi yang dibangun dengan Flutter untuk mendemons
 
 ## 📂 Struktur Proyek
 Proyek ini menggunakan pendekatan **Feature-First Layered Architecture**:
-![Directory](screenshot\directory.png)
+![Directory](screenshot/directory.png)
 
 ## 🚀 Cara Menjalankan
 1.  Clone repositori ini.
@@ -31,4 +31,4 @@ Proyek ini menggunakan pendekatan **Feature-First Layered Architecture**:
 
 ## 📸 Screenshots
 
-![Dashboard](screenshot\dashboard.jpg) | ![Laporan](screenshot\laporan.jpg)
+![Dashboard](screenshot/dashboard.jpg) | ![Laporan](screenshot/laporan.jpg)
