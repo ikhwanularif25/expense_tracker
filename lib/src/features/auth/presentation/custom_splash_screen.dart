@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:loading_indicator/loading_indicator.dart'; // Paket yang sudah diperbaiki
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CustomSplashScreen extends StatefulWidget {
   const CustomSplashScreen({super.key});
@@ -18,30 +19,37 @@ class _CustomSplashScreenState extends State<CustomSplashScreen> {
   }
 
   void _startAppInitialization() async {
-    // Memberi waktu total 2.5 detik untuk animasi dan inisialisasi
+    // Tunggu minimal 2 detik agar animasi splash terlihat
     await Future.delayed(const Duration(milliseconds: 2500));
 
+    // Cek apakah ini pertama kali buka aplikasi
+    final prefs = await SharedPreferences.getInstance();
+
+    final isFirstTime =
+        prefs.getBool('isFirstTime') ??
+        true; // Default true jika belum pernah diset
+
     if (mounted) {
-      // Navigasi ke rute utama aplikasi (Dashboard)
-      context.go('/');
+      if (isFirstTime) {
+        context.go('/onboarding'); 
+      } else {
+        context.go('/');
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Ambil warna utama dari tema untuk konsistensi
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-      // Background yang konsisten dengan tema dark mode
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 1. Logo Aplikasi (diberi animasi fade in & scale up)
             Image.asset(
-                  'assets/app_icon/Logo.png', // Ganti dengan path logo aslimu
+                  'assets/app_icon/Logo.png', 
                   width: 120,
                   height: 120,
                 )

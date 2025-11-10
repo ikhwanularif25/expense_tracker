@@ -1,9 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:intl/intl.dart';
+import '../../../common_widgets/empty_placeholder_widget.dart';
 import '../../transactions/data/transaction_repository.dart';
 import '../domain/report_filter.dart';
 
@@ -63,8 +65,10 @@ class ReportsScreen extends ConsumerWidget {
                   );
                 }).toList(),
                 onChanged: (value) {
-                  if (value != null)
+                  if (value != null) {
+                    HapticFeedback.selectionClick();
                     ref.read(reportFilterProvider.notifier).state = value;
+                  }
                 },
               ),
             ),
@@ -90,6 +94,7 @@ class ReportsScreen extends ConsumerWidget {
             ],
             selected: {isExpense},
             onSelectionChanged: (Set<bool> newSelection) {
+              HapticFeedback.selectionClick();
               ref.read(reportTypeProvider.notifier).state = newSelection.first;
             },
           ),
@@ -100,12 +105,10 @@ class ReportsScreen extends ConsumerWidget {
             child: spendingAsync.when(
               data: (data) {
                 if (data.isEmpty) {
-                  return Center(
-                    child: Text(
-                      "Belum ada data ${isExpense ? 'pengeluaran' : 'pemasukan'}\nuntuk periode ini",
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.grey),
-                    ),
+                  return EmptyPlaceholderWidget(
+                    message:
+                        "Tidak ada data ${isExpense ? 'pengeluaran' : 'pemasukan'}\nuntuk periode ${currentFilter.label.toLowerCase()}.",
+                    iconData: Icons.pie_chart_outline, // Ikon chart kosong
                   );
                 }
 
@@ -163,7 +166,6 @@ class ReportsScreen extends ConsumerWidget {
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
-                    // ... (di dalam ReportsScreen, bagian ListView.builder)
                     Expanded(
                       child: ListView.separated(
                         // Gunakan separated biar lebih rapi

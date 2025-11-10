@@ -2,30 +2,45 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/local_db/drift_db.dart';
 import '../../reports/domain/report_filter.dart';
+import '../domain/budget_with_progress.dart';
 import '../domain/transaction_with_category.dart';
 
 // Repository untuk mengelola data transaksi & kategori
+
 class TransactionRepository {
   final AppDatabase _db;
   TransactionRepository(this._db);
 
   // Ambil semua transaksi, diurutkan tanggal terbaru
- Stream<List<TransactionWithCategory>> watchAllTransactions() {
-    final query =
-        _db.select(_db.transactions).join([
-          innerJoin(
-            _db.categories,
-            _db.categories.id.equalsExp(_db.transactions.categoryId),
-          ),
-        ])..orderBy([
-          // Urutkan berdasarkan tanggal transaksi descending
-          OrderingTerm(
-            expression: _db.transactions.date,
-            mode: OrderingMode.desc,
-          ),
-        ]);
+  Stream<List<TransactionWithCategory>> watchAllTransactions({
+    String query = '',
+  }) {
+    // Mulai dengan select dasar dan join
+    final initialQuery = _db.select(_db.transactions).join([
+      innerJoin(
+        _db.categories,
+        _db.categories.id.equalsExp(_db.transactions.categoryId),
+      ),
+    ]);
 
-    return query.watch().map((rows) {
+    // Jika ada query pencarian, tambahkan klausa WHERE
+    if (query.isNotEmpty) {
+      initialQuery.where(
+        _db.transactions.note.contains(query) | // Cari di catatan
+            _db.transactions.amount.cast<String>().contains(
+              query,
+            ), // Cari di nominal (diubah ke string dulu)
+        // Opsional: mau cari di nama kategori juga? tambahkan:
+        // | _db.categories.name.contains(query)
+      );
+    }
+
+    // Lanjutkan dengan ordering
+    initialQuery.orderBy([
+      OrderingTerm(expression: _db.transactions.date, mode: OrderingMode.desc),
+    ]);
+
+    return initialQuery.watch().map((rows) {
       return rows.map((row) {
         return TransactionWithCategory(
           transaction: row.readTable(_db.transactions),
@@ -178,6 +193,109 @@ class TransactionRepository {
     // Lalu hapus kategorinya
     await (_db.delete(_db.categories)..where((c) => c.id.equals(id))).go();
   }
+
+  Stream<List<BudgetWithProgress>> watchBudgetsWithProgress() {
+    final now = DateTime.now();
+    final currentPeriod = int.parse(
+      '${now.year}${now.month.toString().padLeft(2, '0')}',
+    );
+    final startOfMonth = DateTime(now.year, now.month, 1);
+    final startOfNextMonth = DateTime(now.year, now.month + 1, 1);
+
+    // Buat stream kosong yang hanya berfungsi sebagai pemicu (trigger)
+    // saat ada perubahan di salah satu tabel ini.
+    final triggerStream = _db
+        .select(_db.transactions)
+        .watch(); // Trigger utama dari transaksi
+
+    // Kita gabungkan trigger dari budgets juga agar aman jika budget diubah
+    // (Pakai rxdart 'MergeStream' kalau mau sempurna, tapi untuk MVP trigger dari transaksi biasanya cukup
+    // karena budget jarang berubah dibanding transaksi).
+    // Agar lebih robust tanpa package tambahan, kita bisa pakai trik Custom Select ringan:
+
+    final combinedTrigger = _db
+        .customSelect(
+          'SELECT 1',
+          readsFrom: {_db.budgets, _db.categories, _db.transactions},
+        )
+        .watch();
+
+    return combinedTrigger.asyncMap((_) async {
+      // Logic perhitungan (sama seperti sebelumnya)
+      final budgetRows = await (_db.select(_db.budgets).join([
+        innerJoin(
+          _db.categories,
+          _db.categories.id.equalsExp(_db.budgets.categoryId),
+        ),
+      ])..where(_db.budgets.period.equals(currentPeriod))).get();
+
+      final List<BudgetWithProgress> results = [];
+
+      for (final row in budgetRows) {
+        final budget = row.readTable(_db.budgets);
+        final category = row.readTable(_db.categories);
+
+        final querySpent = _db.select(_db.transactions)
+          ..where((t) => t.categoryId.equals(category.id))
+          ..where(
+            (t) =>
+                t.date.isBiggerOrEqualValue(startOfMonth) &
+                t.date.isSmallerThanValue(startOfNextMonth),
+          );
+
+        final transactions = await querySpent.get();
+        final spent = transactions.fold<double>(0, (sum, t) => sum + t.amount);
+
+        results.add(
+          BudgetWithProgress(budget: budget, category: category, spent: spent),
+        );
+      }
+      return results;
+    });
+  }
+
+  // Tambah atau Update Anggaran (Upsert)
+  Future<void> setBudget(int categoryId, double amount) async {
+    final now = DateTime.now();
+    final currentPeriod = int.parse(
+      '${now.year}${now.month.toString().padLeft(2, '0')}',
+    );
+
+    // Gunakan transaction agar atomik
+    await _db.transaction(() async {
+      // Cek apakah budget sudah ada
+      final existingBudget =
+          await (_db.select(_db.budgets)..where(
+                (t) =>
+                    t.categoryId.equals(categoryId) &
+                    t.period.equals(currentPeriod),
+              ))
+              .getSingleOrNull();
+
+      if (existingBudget != null) {
+        // Jika ada, UPDATE
+        await (_db.update(_db.budgets)
+              ..where((t) => t.id.equals(existingBudget.id)))
+            .write(BudgetsCompanion(amount: Value(amount)));
+      } else {
+        // Jika belum ada, INSERT
+        await _db
+            .into(_db.budgets)
+            .insert(
+              BudgetsCompanion.insert(
+                categoryId: categoryId,
+                amount: amount,
+                period: currentPeriod,
+              ),
+            );
+      }
+    });
+  }
+
+  // Hapus Anggaran
+  Future<void> deleteBudget(int id) {
+    return (_db.delete(_db.budgets)..where((t) => t.id.equals(id))).go();
+  }
 }
 
 final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
@@ -185,11 +303,11 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(db);
 });
 
-final transactionListStreamProvider =
-    StreamProvider.autoDispose<List<TransactionWithCategory>>((ref) {
-      final repository = ref.watch(transactionRepositoryProvider);
-      return repository.watchAllTransactions();
-    });
+// final transactionListStreamProvider =
+//     StreamProvider.autoDispose<List<TransactionWithCategory>>((ref) {
+//       final repository = ref.watch(transactionRepositoryProvider);
+//       return repository.watchAllTransactions();
+//     });
 
 final monthlySummaryStreamProvider =
     StreamProvider.autoDispose<Map<String, double>>((ref) {

@@ -6,9 +6,7 @@ class AppTheme {
   static final darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: const Color(
-      0xFF121212,
-    ), 
+    scaffoldBackgroundColor: const Color(0xFF121212),
     colorScheme: const ColorScheme.dark(
       primary: Color(0xFFBB86FC),
       secondary: Color(0xFF03DAC6),
@@ -20,5 +18,16 @@ class AppTheme {
       elevation: 0,
       centerTitle: true,
     ),
+  );
+
+  static final lightTheme = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
+    colorScheme: const ColorScheme.light(
+      primary: Color(0xFF6200EE), 
+      secondary: Color(0xFF03DAC6),
+      surface: Color.fromARGB(239, 214, 210, 210),
+    ),
+    textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
   );
 }

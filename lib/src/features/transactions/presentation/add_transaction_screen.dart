@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -92,6 +93,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             .read(transactionRepositoryProvider)
             .updateTransaction(updatedTransaction);
       }
+
+      HapticFeedback.mediumImpact();
 
       if (mounted) {
         context.pop();

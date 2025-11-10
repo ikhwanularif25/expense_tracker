@@ -23,6 +23,11 @@ class ScaffoldWithNavBar extends StatelessWidget {
             selectedIcon: Icon(Icons.pie_chart),
             label: 'Laporan',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: 'Anggaran',
+          ),
         ],
       ),
     );

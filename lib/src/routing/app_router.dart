@@ -3,15 +3,18 @@ import 'package:flutter/material.dart';
 import '../common_widgets/scaffold_with_navbar.dart';
 import '../features/auth/presentation/custom_splash_screen.dart';
 import '../features/dashboard/presentation/home_screen.dart';
+import '../features/onboarding/presentation/onboarding_screen.dart';
 import '../features/reports/presentation/reports_screen.dart';
 import '../features/transactions/presentation/add_category_screen.dart';
 import '../features/transactions/presentation/add_transaction_screen.dart';
+import '../features/transactions/presentation/budget_screen.dart';
 import '../features/transactions/presentation/manage_categories_screen.dart';
 import '../services/local_db/drift_db.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorAKey = GlobalKey<NavigatorState>(debugLabel: 'shellA');
 final _shellNavigatorBKey = GlobalKey<NavigatorState>(debugLabel: 'shellB');
+final _shellNavigatorCKey = GlobalKey<NavigatorState>(debugLabel: 'shellC');
 
 final goRouter = GoRouter(
   initialLocation: '/',
@@ -22,7 +25,7 @@ final goRouter = GoRouter(
       path: '/splash',
       builder: (context, state) => const CustomSplashScreen(),
     ),
-    
+
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           ScaffoldWithNavBar(navigationShell: navigationShell),
@@ -41,6 +44,15 @@ final goRouter = GoRouter(
             GoRoute(
               path: '/reports',
               builder: (context, state) => const ReportsScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          navigatorKey: _shellNavigatorCKey,
+          routes: [
+            GoRoute(
+              path: '/budgets',
+              builder: (context, state) => const BudgetScreen(),
             ),
           ],
         ),
@@ -76,6 +88,12 @@ final goRouter = GoRouter(
         // Pastikan AddCategoryScreen sudah dimodifikasi untuk menerima parameter ini
         return AddCategoryScreen(categoryToEdit: categoryToEdit);
       },
+    ),
+
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey, // Fullscreen, di atas navbar
+      path: '/onboarding',
+      builder: (context, state) => const OnboardingScreen(),
     ),
   ],
 );

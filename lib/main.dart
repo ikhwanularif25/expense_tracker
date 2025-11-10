@@ -1,26 +1,30 @@
 // lib/main.dart
 import 'package:expense_tracker/src/constants/app_tehem.dart';
+import 'package:expense_tracker/src/features/settings/presentation/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/routing/app_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 void main() async{
-  WidgetsFlutterBinding.ensureInitialized(); // Pastikan binding siap
+  WidgetsFlutterBinding.ensureInitialized(); 
   await initializeDateFormatting('id_ID', null);
 
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
     return MaterialApp.router(
-      title: 'Expense Tracker Portfolio',
-      theme: AppTheme.darkTheme, // Pakai tema gelap kita
-      themeMode: ThemeMode.dark, // Paksa dark mode untuk MVP ini
+      title: 'Expense Tracker',
+      theme: AppTheme.lightTheme, 
+      darkTheme: AppTheme.darkTheme, 
+      themeMode: themeMode, 
       routerConfig: goRouter,
       debugShowCheckedModeBanner: false,
     );

@@ -1,22 +1,86 @@
+import 'package:expense_tracker/src/features/settings/presentation/theme_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../common_widgets/empty_placeholder_widget.dart';
 import '../../transactions/data/transaction_repository.dart';
+import '../../transactions/presentation/transaction_providers.dart';
 import 'widgets/summary_card.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _isSearchActive = false; // State lokal untuk toggle tampilan search bar
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final transactionsAsyncValue = ref.watch(transactionListStreamProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Dashboard"),
+        // Jika mode search aktif, tampilkan TextField di judul AppBar
+        title: _isSearchActive
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Cari transaksi...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.white54),
+                ),
+                style: const TextStyle(color: Colors.white),
+                onChanged: (value) {
+                  // Update provider saat mengetik
+                  ref.read(searchQueryProvider.notifier).state = value;
+                },
+              )
+            : const Text("Dashboard"),
         actions: [
+          IconButton(
+            icon: Icon(_isSearchActive ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _isSearchActive = !_isSearchActive;
+                if (!_isSearchActive) {
+                  // Jika menutup search, reset query
+                  _searchController.clear();
+                  ref.read(searchQueryProvider.notifier).state = '';
+                }
+              });
+            },
+          ),
+          IconButton(
+            icon: Icon(
+              // Ikon berubah tergantung tema aktif
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+            tooltip: 'Ganti Tema',
+            onPressed: () {
+              // Logika toggle sederhana
+              final currentMode = ref.read(themeModeProvider);
+              final newMode = currentMode == ThemeMode.dark
+                  ? ThemeMode.light
+                  : ThemeMode.dark;
+              ref.read(themeModeProvider.notifier).state = newMode;
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.category),
             tooltip: 'Atur Kategori',
@@ -26,7 +90,7 @@ class HomeScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          const SummaryCard(),
+          if (!_isSearchActive) const SummaryCard(),
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -43,11 +107,11 @@ class HomeScreen extends ConsumerWidget {
             child: transactionsAsyncValue.when(
               data: (transactions) {
                 if (transactions.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      "Belum ada transaksi",
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                  return const EmptyPlaceholderWidget(
+                    message:
+                        "Belum ada transaksi.\nYuk, catat pengeluaranmu hari ini!",
+                    iconData: Icons
+                        .account_balance_wallet_outlined, // Ikon dompet kosong
                   );
                 }
                 return ListView.builder(
@@ -66,14 +130,14 @@ class HomeScreen extends ConsumerWidget {
                             child: Icon(
                               category.isExpense
                                   ? Icons.arrow_upward
-                                  : Icons.arrow_downward, // Ganti ikon di sini
+                                  : Icons.arrow_downward, 
                               color: Color(category.color),
                               size: 20,
                             ),
-                            // Nanti bisa diganti SvgPicture kalau sudah siap
+                            
                           ),
                           title: Text(
-                            category.name, // Tampilkan Nama Kategori di sini
+                            category.name,
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           subtitle: Column(
@@ -109,7 +173,7 @@ class HomeScreen extends ConsumerWidget {
                                 ).format(transaction.amount),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: category.isExpense
+                                  color: category.isExpense 
                                       ? Colors.redAccent
                                       : Colors.green,
                                 ),
@@ -121,6 +185,7 @@ class HomeScreen extends ConsumerWidget {
                                   color: Colors.grey,
                                 ),
                                 onPressed: () {
+                                  HapticFeedback.heavyImpact();
                                   ref
                                       .read(transactionRepositoryProvider)
                                       .deleteTransaction(transaction.id);
