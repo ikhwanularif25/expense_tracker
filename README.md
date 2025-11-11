@@ -44,7 +44,7 @@ Proyek ini menggunakan pendekatan **Feature-First Layered Architecture**:
 
 1.  **Clone repositori ini:**
     ```bash
-    git clone [https://github.com/username-kamu/expense_tracker.git](https://github.com/username-kamu/expense_tracker.git)
+    git clone [https://github.com/username-kamu/expense_tracker.git]([https://github.com/username-kamu/expense_tracker](https://github.com/ikhwanularif25/expense_tracker.git)
     ```
 2.  **Install dependensi:**
     ```bash
