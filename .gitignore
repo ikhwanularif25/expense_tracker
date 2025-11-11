@@ -46,4 +46,4 @@ app.*.map.json
 
 .vscode/templates
 
-lib\firebase_options.dart
+lib/firebase_options.dart
