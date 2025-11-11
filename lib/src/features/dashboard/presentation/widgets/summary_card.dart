@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../transactions/data/transaction_repository.dart';
+import '../../../transactions/presentation/transaction_providers.dart';
 
 class SummaryCard extends ConsumerWidget {
   const SummaryCard({super.key});

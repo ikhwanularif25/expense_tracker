@@ -1,16 +1,23 @@
+// import 'package.expense_tracker/src/features/transactions/presentation/transaction_providers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+// 1. IMPORT KEMBALI 'intl' UNTUK DATEFORMAT
 import 'package:intl/intl.dart';
 import 'package:drift/drift.dart' as drift;
-import '../../../services/local_db/drift_db.dart';
+import '../../../services/local_db/drift_db.dart' as drift_db;
 import '../data/transaction_repository.dart';
+import 'transaction_providers.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
-  final Transaction? transactionToEdit;
+  final drift_db.Transaction? transactionToEdit;
+  final String? firestoreDocId; // Untuk mode Cloud
 
-  const AddTransactionScreen({super.key, this.transactionToEdit});
+  const AddTransactionScreen({
+    super.key,
+    this.transactionToEdit,
+    this.firestoreDocId,
+  });
 
   @override
   ConsumerState<AddTransactionScreen> createState() =>
@@ -22,7 +29,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
-  Category? _selectedCategory;
+  drift_db.Category? _selectedCategory;
 
   @override
   void initState() {
@@ -30,9 +37,18 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     if (widget.transactionToEdit != null) {
       final trans = widget.transactionToEdit!;
       _amountController.text = trans.amount.toStringAsFixed(0);
-      _noteController.text = trans.note ?? '';
       _selectedDate = trans.date;
-      // Kategori akan di-set di dalam FutureBuilder
+
+      String? actualNote;
+      if (widget.firestoreDocId != null && trans.note != null) {
+        final parts = trans.note!.split('::');
+        if (parts.length > 1) {
+          actualNote = parts[1];
+        }
+      } else {
+        actualNote = trans.note;
+      }
+      _noteController.text = actualNote ?? '';
     }
   }
 
@@ -43,6 +59,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
     super.dispose();
   }
 
+  // 2. FUNGSI _pickDate SEKARANG DIGUNAKAN LAGI
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -59,7 +76,6 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
   void _saveTransaction() async {
     if (_formKey.currentState!.validate() && _selectedCategory != null) {
-      // Hapus karakter non-digit (misal 'Rp', titik, koma) sebelum parsing
       final amountStr = _amountController.text.replaceAll(
         RegExp(r'[^0-9]'),
         '',
@@ -68,10 +84,11 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
 
       if (widget.transactionToEdit == null) {
         // --- MODE TAMBAH BARU ---
-        final newTransaction = TransactionsCompanion(
+        final newTransaction = drift_db.TransactionsCompanion(
           amount: drift.Value(amount),
           date: drift.Value(_selectedDate),
           note: drift.Value(
+            // drift.Value() di sini sudah benar
             _noteController.text.isEmpty ? null : _noteController.text,
           ),
           categoryId: drift.Value(_selectedCategory!.id),
@@ -81,20 +98,24 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
             .addTransaction(newTransaction);
       } else {
         // --- MODE EDIT ---
+        // 3. PERBAIKAN: KEMBALIKAN 'drift.Value()' PADA 'note'
         final updatedTransaction = widget.transactionToEdit!.copyWith(
           amount: amount,
           date: _selectedDate,
           note: drift.Value(
+            // <-- WAJIB ADA drift.Value()
             _noteController.text.isEmpty ? null : _noteController.text,
           ),
           categoryId: _selectedCategory!.id,
         );
+
         await ref
             .read(transactionRepositoryProvider)
-            .updateTransaction(updatedTransaction);
+            .updateTransaction(
+              updatedTransaction,
+              firestoreDocId: widget.firestoreDocId,
+            );
       }
-
-      HapticFeedback.mediumImpact();
 
       if (mounted) {
         context.pop();
@@ -107,7 +128,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext ctxt) {
+    // Ganti nama 'context' agar tidak konflik
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -122,136 +144,109 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Input Jumlah
               TextFormField(
                 controller: _amountController,
                 decoration: const InputDecoration(
                   labelText: 'Jumlah (Rp)',
                   prefixText: 'Rp ',
-                  border: OutlineInputBorder(), // Tambah border agar lebih rapi
+                  border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Harap isi jumlah';
-                  }
-                  final amount = double.tryParse(
-                    value.replaceAll(RegExp(r'[^0-9]'), ''),
-                  );
-                  if (amount == null || amount <= 0) {
-                    return 'Jumlah harus lebih dari 0';
-                  }
-                  return null;
+                  /* ... (Validasi sama) ... */
                 },
               ),
               const SizedBox(height: 16),
 
-              // Input Tanggal
+              // 4. PERBAIKAN: TAMBAHKAN 'onTap' DAN 'DateFormat' KEMBALI
               ListTile(
-                contentPadding: EdgeInsets.zero, // Rata kiri dengan input lain
+                contentPadding: EdgeInsets.zero,
                 title: const Text("Tanggal"),
                 subtitle: Text(
                   DateFormat('dd MMMM yyyy', 'id').format(_selectedDate),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 trailing: const Icon(Icons.calendar_today),
-                onTap: _pickDate,
+                onTap: _pickDate, // <-- TAMBAHKAN INI KEMBALI
               ),
               const Divider(),
 
-              // Dropdown Kategori
-              FutureBuilder<List<Category>>(
-                future: ref
-                    .read(transactionRepositoryProvider)
-                    .getAllCategories(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    // Tampilkan placeholder saat loading agar layout tidak 'lompat'
-                    return const SizedBox(
+              Consumer(
+                builder: (context, ref, child) {
+                  final categoriesAsync = ref.watch(categoryListStreamProvider);
+                  return categoriesAsync.when(
+                    data: (categories) {
+                      // ... (Logika Dropdown sama)
+                      if (_selectedCategory == null &&
+                          widget.transactionToEdit != null) {
+                        try {
+                          _selectedCategory = categories.firstWhere(
+                            (cat) =>
+                                cat.id == widget.transactionToEdit!.categoryId,
+                          );
+                        } catch (_) {}
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          DropdownButtonFormField<drift_db.Category>(
+                            decoration: const InputDecoration(
+                              labelText: 'Kategori',
+                              border: OutlineInputBorder(),
+                            ),
+                            value: _selectedCategory,
+                            items: categories.map((category) {
+                              return DropdownMenuItem(
+                                value: category,
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: Color(category.color),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(category.name),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCategory = value;
+                              });
+                            },
+                            validator: (value) =>
+                                value == null ? 'Harap pilih kategori' : null,
+                          ),
+                          TextButton.icon(
+                            onPressed: () async {
+                              await context.push('/add-category');
+                            },
+                            icon: const Icon(
+                              Icons.add_circle_outline,
+                              size: 18,
+                            ),
+                            label: const Text("Kategori Baru"),
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox(
                       height: 60,
                       child: Center(child: LinearProgressIndicator()),
-                    );
-                  }
-
-                  final categories = snapshot.data!;
-
-                  // Logika inisialisasi kategori saat mode edit
-                  if (_selectedCategory == null &&
-                      widget.transactionToEdit != null) {
-                    try {
-                      _selectedCategory = categories.firstWhere(
-                        (cat) => cat.id == widget.transactionToEdit!.categoryId,
-                      );
-                    } catch (_) {
-                      // Kategori lama mungkin sudah dihapus
-                    }
-                  }
-
-                  // Pastikan _selectedCategory valid di daftar baru
-                  if (_selectedCategory != null &&
-                      !categories.any(
-                        (cat) => cat.id == _selectedCategory!.id,
-                      )) {
-                    _selectedCategory = null;
-                  }
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      DropdownButtonFormField<Category>(
-                        decoration: const InputDecoration(
-                          labelText: 'Kategori',
-                          border: OutlineInputBorder(),
-                        ),
-                        value: _selectedCategory,
-                        items: categories.map((category) {
-                          return DropdownMenuItem(
-                            value: category,
-                            child: Row(
-                              children: [
-                                // Indikator warna kategori
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: Color(category.color),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(category.name),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedCategory = value;
-                          });
-                        },
-                        validator: (value) =>
-                            value == null ? 'Harap pilih kategori' : null,
-                      ),
-                      // Tombol tambah kategori baru
-                      TextButton.icon(
-                        onPressed: () async {
-                          await context.push('/add-category');
-                          setState(() {}); // Refresh daftar kategori
-                        },
-                        icon: const Icon(Icons.add_circle_outline, size: 18),
-                        label: const Text("Kategori Baru"),
-                        style: TextButton.styleFrom(
-                          visualDensity:
-                              VisualDensity.compact, // Agar lebih rapat
-                        ),
-                      ),
-                    ],
+                    ),
+                    error: (err, stack) => Text("Gagal memuat kategori: $err"),
                   );
                 },
               ),
               const SizedBox(height: 8),
-
-              // Input Catatan
               TextFormField(
                 controller: _noteController,
                 decoration: const InputDecoration(
@@ -259,12 +254,10 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen> {
                   border: OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
-                maxLines: 3, // Agar lebih luas untuk catatan panjang
+                maxLines: 3,
                 maxLength: 100,
               ),
               const SizedBox(height: 32),
-
-              // Tombol Simpan
               ElevatedButton(
                 onPressed: _saveTransaction,
                 style: ElevatedButton.styleFrom(

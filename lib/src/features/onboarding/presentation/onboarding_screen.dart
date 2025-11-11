@@ -12,7 +12,7 @@ class OnboardingScreen extends StatelessWidget {
     await prefs.setBool('isFirstTime', false);
 
     if (context.mounted) {
-      context.go('/');
+      context.go('/welcome');
     }
   }
 

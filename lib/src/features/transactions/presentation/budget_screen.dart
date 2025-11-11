@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import '../../auth/data/auth_service.dart';
 import '../data/transaction_repository.dart';
 import '../domain/budget_with_progress.dart';
 import '../../../common_widgets/empty_placeholder_widget.dart';
@@ -214,7 +215,6 @@ class BudgetScreen extends ConsumerWidget {
                     begin: 0.1, // Mulai sedikit di bawah
                     end: 0, // Berakhir di posisi normal
                   );
-              ;
             },
           );
         },
@@ -251,10 +251,26 @@ class BudgetScreen extends ConsumerWidget {
           TextButton(onPressed: () => ctx.pop(), child: const Text("Batal")),
           TextButton(
             onPressed: () async {
-              ctx.pop(); // Tutup dialog
-              await ref
-                  .read(transactionRepositoryProvider)
-                  .deleteBudget(item.budget.id);
+              ctx.pop();
+
+              // --- PERBAIKAN LOGIKA DELETE HIBRIDA ---
+              // Cek mode saat ini
+              final isCloudMode = ref.read(authStateProvider).value != null;
+
+              if (isCloudMode) {
+                // Mode Cloud: Kirim ID Kategori dan Periode
+                await ref
+                    .read(transactionRepositoryProvider)
+                    .deleteBudget(item.category.id, item.budget.period);
+              } else {
+                // Mode Tamu: Kirim ID Budget (dari data lokal)
+                await ref
+                    .read(transactionRepositoryProvider)
+                    .deleteBudget(
+                      item.budget.id, // ID unik dari tabel Budgets lokal
+                      0, // Period tidak dipakai di mode lokal, kirim 0
+                    );
+              }
             },
             child: const Text("Hapus", style: TextStyle(color: Colors.red)),
           ),
@@ -263,7 +279,6 @@ class BudgetScreen extends ConsumerWidget {
     );
   }
 }
-
 // --- Widget Dialog Tambah/Edit Anggaran ---
 class SetBudgetDialog extends ConsumerStatefulWidget {
   final BudgetWithProgress? budgetToEdit;
@@ -329,7 +344,7 @@ class _SetBudgetDialogState extends ConsumerState<SetBudgetDialog> {
                     decoration: const InputDecoration(
                       labelText: 'Kategori Pengeluaran',
                     ),
-                    value: _selectedCategory,
+                    initialValue: _selectedCategory,
                     // Disable dropdown jika sedang mode EDIT
                     onChanged: widget.budgetToEdit == null
                         ? (value) => setState(() => _selectedCategory = value)
@@ -366,8 +381,9 @@ class _SetBudgetDialogState extends ConsumerState<SetBudgetDialog> {
                   final amount = double.tryParse(
                     value.replaceAll(RegExp(r'[^0-9]'), ''),
                   );
-                  if (amount == null || amount <= 0)
+                  if (amount == null || amount <= 0) {
                     return 'Jumlah harus lebih dari 0';
+                  }
                   return null;
                 },
               ),

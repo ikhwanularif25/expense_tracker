@@ -57,7 +57,7 @@ class ReportsScreen extends ConsumerWidget {
                 value: currentFilter,
                 icon: const Icon(Icons.filter_list),
                 style: Theme.of(context).textTheme.bodyMedium,
-                dropdownColor: Theme.of(context).colorScheme.surfaceVariant,
+                dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                 items: ReportFilter.values.map((filter) {
                   return DropdownMenuItem(
                     value: filter,

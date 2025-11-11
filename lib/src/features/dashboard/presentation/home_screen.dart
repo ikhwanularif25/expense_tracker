@@ -122,6 +122,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     final transaction = item.transaction;
                     final category = item.category;
 
+                    String? actualNote;
+                    String? firestoreDocId;
+
+                    if (transaction.note != null) {
+                      final parts = transaction.note!.split('::');
+                      firestoreDocId = parts[0]; // Bagian pertama selalu ID
+                      if (parts.length > 1) {
+                        actualNote =
+                            parts[1]; // Bagian kedua adalah catatan asli (jika ada)
+                      }
+                    }
+
                     return ListTile(
                           leading: CircleAvatar(
                             backgroundColor: Color(
@@ -130,11 +142,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: Icon(
                               category.isExpense
                                   ? Icons.arrow_upward
-                                  : Icons.arrow_downward, 
+                                  : Icons.arrow_downward,
                               color: Color(category.color),
                               size: 20,
                             ),
-                            
                           ),
                           title: Text(
                             category.name,
@@ -144,10 +155,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Tampilkan catatan jika ada
-                              if (transaction.note != null &&
-                                  transaction.note!.isNotEmpty)
+                              if (actualNote != null && actualNote.isNotEmpty)
                                 Text(
-                                  transaction.note!,
+                                  actualNote, // <-- Gunakan 'actualNote', BUKAN 'transaction.note!'
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -173,7 +183,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ).format(transaction.amount),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: category.isExpense 
+                                  color: category.isExpense
                                       ? Colors.redAccent
                                       : Colors.green,
                                 ),
@@ -188,7 +198,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   HapticFeedback.heavyImpact();
                                   ref
                                       .read(transactionRepositoryProvider)
-                                      .deleteTransaction(transaction.id);
+                                      .deleteTransaction(
+                                        transaction.id,
+                                        firestoreDocId:
+                                            firestoreDocId, // <-- PENTING
+                                      );
                                 },
                               ),
                             ],
@@ -197,7 +211,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             // Saat tap, kirim objek transaksi ASLI ke layar edit
                             context.push(
                               '/add-transaction',
-                              extra: transaction,
+                              extra: {
+                                'transaction': transaction,
+                                'firestoreDocId': firestoreDocId,
+                              },
                             );
                           },
                         )

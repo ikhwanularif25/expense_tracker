@@ -31,9 +31,9 @@ class _CustomSplashScreenState extends State<CustomSplashScreen> {
 
     if (mounted) {
       if (isFirstTime) {
-        context.go('/onboarding'); 
+        context.go('/onboarding');
       } else {
-        context.go('/');
+        context.go('/welcome');
       }
     }
   }
@@ -48,11 +48,7 @@ class _CustomSplashScreenState extends State<CustomSplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-                  'assets/app_icon/Logo.png', 
-                  width: 120,
-                  height: 120,
-                )
+            Image.asset('assets/app_icons/Logo.png', width: 120, height: 120)
                 .animate()
                 .fadeIn(duration: 800.ms, delay: 200.ms)
                 .scale(begin: const Offset(0.5, 0.5), end: const Offset(1, 1)),

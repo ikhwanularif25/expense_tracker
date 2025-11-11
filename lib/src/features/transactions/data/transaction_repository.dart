@@ -1,316 +1,450 @@
-import 'package:drift/drift.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// Import 'drift' untuk 'Value'
+import 'package:drift/drift.dart' as drift;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../services/local_db/drift_db.dart';
-import '../../reports/domain/report_filter.dart';
+import 'package:expense_tracker/src/features/auth/data/auth_service.dart';
+// Import 'drift_db' dengan prefix
+import 'package:expense_tracker/src/services/local_db/drift_db.dart'
+    as drift_db;
 import '../domain/budget_with_progress.dart';
 import '../domain/transaction_with_category.dart';
+import '../../reports/domain/report_filter.dart';
+import 'firebase_datasource.dart';
+import 'local_datasource.dart';
+import 'package:rxdart/rxdart.dart';
+import 'package:flutter/foundation.dart';
 
-// Repository untuk mengelola data transaksi & kategori
-
+/// Repository Hibrida.
+///
+/// Bertanggung jawab untuk memutuskan apakah harus memanggil database lokal (Tamu)
+/// atau database cloud (Login). UI hanya berinteraksi dengan kelas ini.
 class TransactionRepository {
-  final AppDatabase _db;
-  TransactionRepository(this._db);
+  final LocalDataSource _localDB;
+  final FirebaseDataSource _remoteDB;
+  final bool _isCloudMode;
+  final String? _userId;
 
-  // Ambil semua transaksi, diurutkan tanggal terbaru
+  TransactionRepository(
+    this._localDB,
+    this._remoteDB,
+    this._isCloudMode,
+    this._userId,
+  );
+
+  // --- Transaksi ---
+
+  Future<void> addTransaction(drift_db.TransactionsCompanion entry) async {
+    if (_isCloudMode) {
+      final data = {
+        'amount': entry.amount.value,
+        'date': entry.date.value.toIso8601String(),
+        'note': entry.note.value,
+        'categoryId': entry.categoryId.value,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      await _remoteDB.addTransaction(data);
+    } else {
+      await _localDB.addTransaction(entry);
+    }
+  }
+
+  Future<void> updateTransaction(
+    drift_db.Transaction transaction, {
+    String? firestoreDocId,
+  }) async {
+    if (_isCloudMode) {
+      // Logika Cloud
+      if (firestoreDocId == null) {
+        debugPrint("Firestore Doc ID is null, cannot update cloud data");
+        return;
+      }
+
+      final data = {
+        'amount': transaction.amount,
+        'date': transaction.date.toIso8601String(),
+        'note': transaction.note,
+        'categoryId': transaction.categoryId,
+      };
+      await _remoteDB.updateTransaction(firestoreDocId, data);
+    } else {
+      // Logika Lokal
+      await _localDB.updateTransaction(transaction);
+    }
+  }
+
+  Future<void> deleteTransaction(int localId, {String? firestoreDocId}) async {
+    if (_isCloudMode) {
+      if (firestoreDocId == null) {
+        debugPrint("Firestore Doc ID is null, cannot delete cloud data");
+        return;
+      }
+      await _remoteDB.deleteTransaction(firestoreDocId);
+    } else {
+      await _localDB.deleteTransaction(localId);
+    }
+  }
+
   Stream<List<TransactionWithCategory>> watchAllTransactions({
     String query = '',
   }) {
-    // Mulai dengan select dasar dan join
-    final initialQuery = _db.select(_db.transactions).join([
-      innerJoin(
-        _db.categories,
-        _db.categories.id.equalsExp(_db.transactions.categoryId),
-      ),
-    ]);
+    if (_isCloudMode) {
+      // --- Logika CLOUD ---
+      final transactionsStream = _remoteDB.watchCloudTransactions(query: query);
+      // PERBAIKAN: Ambil kategori dari LOKAL
+      final categoriesStream = _localDB.watchAllCategories();
 
-    // Jika ada query pencarian, tambahkan klausa WHERE
-    if (query.isNotEmpty) {
-      initialQuery.where(
-        _db.transactions.note.contains(query) | // Cari di catatan
-            _db.transactions.amount.cast<String>().contains(
-              query,
-            ), // Cari di nominal (diubah ke string dulu)
-        // Opsional: mau cari di nama kategori juga? tambahkan:
-        // | _db.categories.name.contains(query)
-      );
+      return Rx.combineLatest2(transactionsStream, categoriesStream, (
+        QuerySnapshot cloudTransactions,
+        List<drift_db.Category> localCategories, // <-- Data dari LOKAL
+      ) {
+        return cloudTransactions.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+
+          drift_db.Category category;
+          try {
+            // Cocokkan dengan kategori LOKAL
+            category = localCategories.firstWhere(
+              (cat) => cat.id == data['categoryId'],
+            );
+          } catch (e) {
+            // Fallback
+            category = drift_db.Category(
+              id: -1,
+              name: "Unknown",
+              color: 0xFF808080,
+              iconPath: '',
+              isExpense: true,
+            );
+          }
+
+          String? finalNote;
+          final String? originalNote = data['note'] as String?;
+          final String firestoreDocId = doc.id;
+
+          if (originalNote != null && originalNote.isNotEmpty) {
+            finalNote = "$firestoreDocId::$originalNote";
+          } else {
+            finalNote = firestoreDocId;
+          }
+
+          final transaction = drift_db.Transaction(
+            id: 0,
+            amount: (data['amount'] as num).toDouble(),
+            date: DateTime.parse(data['date']),
+            note: finalNote,
+            categoryId: data['categoryId'],
+          );
+
+          return TransactionWithCategory(
+            transaction: transaction,
+            category: category,
+          );
+        }).toList();
+      });
+    } else {
+      // --- Logika LOKAL (Tamu) ---
+      return _localDB.watchAllTransactions(query: query);
     }
-
-    // Lanjutkan dengan ordering
-    initialQuery.orderBy([
-      OrderingTerm(expression: _db.transactions.date, mode: OrderingMode.desc),
-    ]);
-
-    return initialQuery.watch().map((rows) {
-      return rows.map((row) {
-        return TransactionWithCategory(
-          transaction: row.readTable(_db.transactions),
-          category: row.readTable(_db.categories),
-        );
-      }).toList();
-    });
   }
 
-  // Tambah transaksi baru
-  Future<void> addTransaction(TransactionsCompanion entry) {
-    return _db.into(_db.transactions).insert(entry);
+  // --- Kategori ---
+
+  // PERBAIKAN: Kategori selalu ditangani oleh LOKAL
+  Stream<List<drift_db.Category>> watchAllCategories() {
+    return _localDB.watchAllCategories();
   }
 
-  // Hapus transaksi
-  Future<void> deleteTransaction(int id) {
-    return (_db.delete(_db.transactions)..where((t) => t.id.equals(id))).go();
+  Future<void> addCategory(drift_db.CategoriesCompanion entry) async {
+    // Selalu simpan ke LOKAL
+    // TODO (V3): Jika cloud mode, tambahkan sinkronisasi ke Firebase 'categories'
+    await _localDB.addCategory(entry);
   }
 
-  // Ambil semua kategori (untuk dropdown saat tambah transaksi)
-  Future<List<Category>> getAllCategories() {
-    // Urutkan berdasarkan jenis (isExpense) lalu nama
-    return (_db.select(_db.categories)..orderBy([
-          (t) => OrderingTerm(
-            expression: t.isExpense,
-            mode: OrderingMode.desc,
-          ), // Pengeluaran dulu (true = 1, false = 0 di SQLite biasanya, sesuaikan jika terbalik)
-          (t) => OrderingTerm(expression: t.name),
-        ]))
-        .get();
+  Future<void> updateCategory(drift_db.Category category) {
+    return _localDB.updateCategory(category);
   }
 
-  // Stream ringkasan transaksi bulan ini
+  Future<void> deleteCategory(int id) {
+    return _localDB.deleteCategory(id);
+  }
+
+  // --- Laporan & Dashboard ---
+
+  // PERBAIKAN: Implementasi 'watchMonthlySummary' untuk Cloud
   Stream<Map<String, double>> watchMonthlySummary() {
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    // Akhir bulan ini (awal bulan depan dikurang 1 hari)
-    final endOfMonth = DateTime(
-      now.year,
-      now.month + 1,
-      1,
-    ).subtract(const Duration(days: 1));
+    if (_isCloudMode) {
+      final now = DateTime.now();
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final startOfNextMonth = DateTime(now.year, now.month + 1, 1);
 
-    // Query untuk mengambil transaksi bulan ini beserta data kategorinya
-    final query = _db.select(_db.transactions).join([
-      innerJoin(
-        _db.categories,
-        _db.categories.id.equalsExp(_db.transactions.categoryId),
-      ),
-    ])..where(_db.transactions.date.isBetweenValues(startOfMonth, endOfMonth));
+      // 1. Ambil stream transaksi (cloud)
+      final transactionsStream = _remoteDB.watchCloudTransactions().map(
+        (snapshot) => snapshot.docs.where((doc) {
+          try {
+            final date = DateTime.parse(doc.data()['date']);
+            return date.isAfter(startOfMonth) &&
+                date.isBefore(startOfNextMonth);
+          } catch (e) {
+            return false;
+          }
+        }).toList(),
+      );
 
-    return query.watch().map((rows) {
-      double income = 0;
-      double expense = 0;
+      // 2. Ambil stream kategori (LOKAL)
+      final categoriesStream = _localDB.watchAllCategories();
 
-      for (final row in rows) {
-        final transaction = row.readTable(_db.transactions);
-        final category = row.readTable(_db.categories);
-
-        if (category.isExpense) {
-          expense += transaction.amount;
-        } else {
-          income += transaction.amount;
+      // 3. Gabungkan
+      return Rx.combineLatest2(transactionsStream, categoriesStream, (
+        List<QueryDocumentSnapshot> cloudTransactions,
+        List<drift_db.Category> localCategories, // <-- Data LOKAL
+      ) {
+        double income = 0;
+        double expense = 0;
+        for (final doc in cloudTransactions) {
+          final data = doc.data() as Map<String, dynamic>;
+          try {
+            // Cocokkan dengan kategori LOKAL
+            final category = localCategories.firstWhere(
+              (cat) => cat.id == data['categoryId'],
+            );
+            if (category.isExpense) {
+              expense += (data['amount'] as num).toDouble();
+            } else {
+              income += (data['amount'] as num).toDouble();
+            }
+          } catch (e) {
+            debugPrint("Error calculating summary (category not found): $e");
+          }
         }
-      }
-
-      return {'income': income, 'expense': expense, 'total': income - expense};
-    });
+        return {
+          'income': income,
+          'expense': expense,
+          'total': income - expense,
+        };
+      });
+    } else {
+      return _localDB.watchMonthlySummary();
+    }
   }
 
-  // Stream total pengeluaran per kategori bulan ini
   Stream<List<Map<String, dynamic>>> watchCategorySumByFilter(
     ReportFilter filter, {
     required bool isExpense,
   }) {
-    final now = DateTime.now();
-    DateTime startDate;
-    DateTime endDate;
+    if (_isCloudMode) {
+      // --- Logika CLOUD ---
+      final now = DateTime.now();
+      DateTime startDate;
+      DateTime endDate;
 
-    // ... (logika switch case filter tanggal TETAP SAMA) ...
-    switch (filter) {
-      // ... copas case yang lama ...
-      case ReportFilter.thisMonth:
-        startDate = DateTime(now.year, now.month, 1);
-        endDate = DateTime(
-          now.year,
-          now.month + 1,
-          1,
-        ).subtract(const Duration(days: 1));
-        break;
-      case ReportFilter.lastMonth:
-        startDate = DateTime(now.year, now.month - 1, 1);
-        endDate = DateTime(now.year, now.month, 0);
-        break;
-      case ReportFilter.thisYear:
-        startDate = DateTime(now.year, 1, 1);
-        endDate = DateTime(now.year, 12, 31);
-        break;
-    }
-
-    final query =
-        _db.select(_db.transactions).join([
-            innerJoin(
-              _db.categories,
-              _db.categories.id.equalsExp(_db.transactions.categoryId),
-            ),
-          ])
-          ..where(_db.transactions.date.isBetweenValues(startDate, endDate))
-          ..where(
-            _db.categories.isExpense.equals(isExpense),
-          ); // GUNAKAN PARAMETER BARU DI SINI
-
-    return query.watch().map((rows) {
-      // ... (logika mapping TETAP SAMA) ...
-      final Map<String, double> totals = {};
-      final Map<String, int> colors = {};
-      for (final row in rows) {
-        final amount = row.readTable(_db.transactions).amount;
-        final category = row.readTable(_db.categories);
-        totals[category.name] = (totals[category.name] ?? 0) + amount;
-        colors[category.name] = category.color;
+      // Tentukan rentang tanggal
+      switch (filter) {
+        case ReportFilter.thisMonth:
+          startDate = DateTime(now.year, now.month, 1);
+          endDate = DateTime(
+            now.year,
+            now.month + 1,
+            1,
+          ).subtract(const Duration(days: 1));
+          break;
+        case ReportFilter.lastMonth:
+          startDate = DateTime(now.year, now.month - 1, 1);
+          endDate = DateTime(now.year, now.month, 0);
+          break;
+        case ReportFilter.thisYear:
+          startDate = DateTime(now.year, 1, 1);
+          endDate = DateTime(now.year, 12, 31);
+          break;
       }
-      return totals.entries
-          .map(
-            (e) => {
-              'category': e.key,
-              'total': e.value,
-              'color': colors[e.key],
-            },
-          )
-          .toList();
-    });
-  }
 
-  Future<void> updateTransaction(Transaction transaction) {
-    // .replace otomatis menggunakan ID dari objek transaction untuk mencari baris yang tepat
-    return _db.update(_db.transactions).replace(transaction);
-  }
+      // 1. Ambil stream transaksi (cloud) DENGAN FILTER TANGGAL
+      final transactionsStream = _remoteDB.watchCloudTransactions(
+        startDate: startDate,
+        endDate: endDate,
+      );
 
-  Future<void> updateCategory(Category category) {
-    return _db.update(_db.categories).replace(category);
-  }
+      // 2. Ambil stream kategori (LOKAL)
+      final categoriesStream = _localDB.watchAllCategories();
 
-  // Hapus kategori (Hati-hati: Transaksi yang menggunakan kategori ini bisa jadi orphan/yatim)
-  Future<void> deleteCategory(int id) async {
-    // Opsi 1: Hapus semua transaksi terkait dulu (Cascade Delete manual)
-    await (_db.delete(
-      _db.transactions,
-    )..where((t) => t.categoryId.equals(id))).go();
-    // Lalu hapus kategorinya
-    await (_db.delete(_db.categories)..where((c) => c.id.equals(id))).go();
-  }
+      // 3. Gabungkan
+      return Rx.combineLatest2(transactionsStream, categoriesStream, (
+        QuerySnapshot cloudTransactions,
+        List<drift_db.Category> localCategories,
+      ) {
+        final Map<String, double> totals = {};
+        final Map<String, int> colors = {};
 
-  Stream<List<BudgetWithProgress>> watchBudgetsWithProgress() {
-    final now = DateTime.now();
-    final currentPeriod = int.parse(
-      '${now.year}${now.month.toString().padLeft(2, '0')}',
-    );
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final startOfNextMonth = DateTime(now.year, now.month + 1, 1);
+        for (final doc in cloudTransactions.docs) {
+          final data =
+              doc.data()
+                  as Map<String, dynamic>?; // Ambil data sebagai nullable
 
-    // Buat stream kosong yang hanya berfungsi sebagai pemicu (trigger)
-    // saat ada perubahan di salah satu tabel ini.
-    final triggerStream = _db
-        .select(_db.transactions)
-        .watch(); // Trigger utama dari transaksi
+          if (data == null) continue; // Lewati jika data null
 
-    // Kita gabungkan trigger dari budgets juga agar aman jika budget diubah
-    // (Pakai rxdart 'MergeStream' kalau mau sempurna, tapi untuk MVP trigger dari transaksi biasanya cukup
-    // karena budget jarang berubah dibanding transaksi).
-    // Agar lebih robust tanpa package tambahan, kita bisa pakai trik Custom Select ringan:
-
-    final combinedTrigger = _db
-        .customSelect(
-          'SELECT 1',
-          readsFrom: {_db.budgets, _db.categories, _db.transactions},
-        )
-        .watch();
-
-    return combinedTrigger.asyncMap((_) async {
-      // Logic perhitungan (sama seperti sebelumnya)
-      final budgetRows = await (_db.select(_db.budgets).join([
-        innerJoin(
-          _db.categories,
-          _db.categories.id.equalsExp(_db.budgets.categoryId),
-        ),
-      ])..where(_db.budgets.period.equals(currentPeriod))).get();
-
-      final List<BudgetWithProgress> results = [];
-
-      for (final row in budgetRows) {
-        final budget = row.readTable(_db.budgets);
-        final category = row.readTable(_db.categories);
-
-        final querySpent = _db.select(_db.transactions)
-          ..where((t) => t.categoryId.equals(category.id))
-          ..where(
-            (t) =>
-                t.date.isBiggerOrEqualValue(startOfMonth) &
-                t.date.isSmallerThanValue(startOfNextMonth),
-          );
-
-        final transactions = await querySpent.get();
-        final spent = transactions.fold<double>(0, (sum, t) => sum + t.amount);
-
-        results.add(
-          BudgetWithProgress(budget: budget, category: category, spent: spent),
-        );
-      }
-      return results;
-    });
-  }
-
-  // Tambah atau Update Anggaran (Upsert)
-  Future<void> setBudget(int categoryId, double amount) async {
-    final now = DateTime.now();
-    final currentPeriod = int.parse(
-      '${now.year}${now.month.toString().padLeft(2, '0')}',
-    );
-
-    // Gunakan transaction agar atomik
-    await _db.transaction(() async {
-      // Cek apakah budget sudah ada
-      final existingBudget =
-          await (_db.select(_db.budgets)..where(
-                (t) =>
-                    t.categoryId.equals(categoryId) &
-                    t.period.equals(currentPeriod),
-              ))
-              .getSingleOrNull();
-
-      if (existingBudget != null) {
-        // Jika ada, UPDATE
-        await (_db.update(_db.budgets)
-              ..where((t) => t.id.equals(existingBudget.id)))
-            .write(BudgetsCompanion(amount: Value(amount)));
-      } else {
-        // Jika belum ada, INSERT
-        await _db
-            .into(_db.budgets)
-            .insert(
-              BudgetsCompanion.insert(
-                categoryId: categoryId,
-                amount: amount,
-                period: currentPeriod,
-              ),
+          try {
+            // Cocokkan kategori
+            final category = localCategories.firstWhere(
+              (cat) => cat.id == data['categoryId'],
             );
-      }
-    });
+
+            // Filter berdasarkan tipe (Pemasukan/Pengeluaran)
+            if (category.isExpense == isExpense) {
+              final amount = (data['amount'] as num).toDouble();
+              totals[category.name] = (totals[category.name] ?? 0) + amount;
+              colors[category.name] = category.color;
+            }
+          } catch (e) {
+            debugPrint("Error calculating report (category not found): $e");
+          }
+        }
+        // Ubah Map ke List
+        return totals.entries
+            .map(
+              (e) => {
+                'category': e.key,
+                'total': e.value,
+                'color': colors[e.key],
+              },
+            )
+            .toList();
+      });
+    } else {
+      // --- Logika LOKAL (sudah benar) ---
+      return _localDB.watchCategorySumByFilter(filter, isExpense: isExpense);
+    }
   }
 
-  // Hapus Anggaran
-  Future<void> deleteBudget(int id) {
-    return (_db.delete(_db.budgets)..where((t) => t.id.equals(id))).go();
+  // --- Anggaran (Budget) ---
+  Stream<List<BudgetWithProgress>> watchBudgetsWithProgress() {
+    if (_isCloudMode) {
+      // --- Logika CLOUD ---
+      final now = DateTime.now();
+      final currentPeriod = int.parse(
+        '${now.year}${now.month.toString().padLeft(2, '0')}',
+      );
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final startOfNextMonth = DateTime(now.year, now.month + 1, 1);
+
+      // 1. Ambil stream budgets (cloud)
+      final budgetsStream = _remoteDB.watchCloudBudgets(currentPeriod);
+
+      // 2. Ambil stream transaksi (cloud) untuk bulan ini
+      final transactionsStream = _remoteDB.watchCloudTransactions(
+        startDate: startOfMonth,
+        endDate: startOfNextMonth.subtract(const Duration(days: 1)),
+      );
+
+      // 3. Ambil stream kategori (LOKAL)
+      final categoriesStream = _localDB.watchAllCategories();
+
+      // 4. Gabungkan ketiganya
+      return Rx.combineLatest3(
+        budgetsStream,
+        transactionsStream,
+        categoriesStream,
+        (
+          QuerySnapshot cloudBudgets,
+          QuerySnapshot cloudTransactions,
+          List<drift_db.Category> localCategories,
+        ) {
+          // Buat List<BudgetWithProgress> dari data ini
+          return cloudBudgets.docs.map((budgetDoc) {
+            final budgetData = budgetDoc.data() as Map<String, dynamic>?;
+
+            drift_db.Category category;
+            try {
+              if (budgetData == null) throw Exception("Budget data is null");
+              category = localCategories.firstWhere(
+                (cat) => cat.id == budgetData['categoryId'],
+              );
+            } catch (e) {
+              category = drift_db.Category(
+                id: -1,
+                name: "Unknown",
+                color: 0xFF808080,
+                iconPath: '',
+                isExpense: true,
+              );
+            }
+
+            // Hitung total pengeluaran untuk kategori ini
+            double spent = 0;
+            for (final transDoc in cloudTransactions.docs) {
+              final data = transDoc.data() as Map<String, dynamic>?;
+              if (data != null && data['categoryId'] == category.id) {
+                spent += (data['amount'] as num).toDouble();
+              }
+            }
+
+            // Buat objek Budget (palsu) dari data Firebase
+            final budget = drift_db.Budget(
+              id: 0, // ID lokal tidak relevan
+              categoryId: budgetData?['categoryId'] ?? 0,
+              amount: (budgetData?['amount'] as num? ?? 0).toDouble(),
+              period: budgetData?['period'] ?? 0,
+            );
+
+            return BudgetWithProgress(
+              budget: budget,
+              category: category,
+              spent: spent,
+            );
+          }).toList();
+        },
+      );
+    } else {
+      // --- Logika LOKAL (sudah benar) ---
+      return _localDB.watchBudgetsWithProgress();
+    }
+  }
+
+  Future<void> setBudget(int categoryId, double amount) {
+    if (_isCloudMode) {
+      final now = DateTime.now();
+      final currentPeriod = int.parse(
+        '${now.year}${now.month.toString().padLeft(2, '0')}',
+      );
+      return _remoteDB.setBudget(categoryId, amount, currentPeriod);
+    } else {
+      return _localDB.setBudget(categoryId, amount);
+    }
+  }
+
+  Future<void> deleteBudget(int categoryId, int period) {
+    if (_isCloudMode) {
+      final now = DateTime.now();
+      final currentPeriod = int.parse(
+        '${now.year}${now.month.toString().padLeft(2, '0')}',
+      );
+      // Hapus berdasarkan categoryId dan period
+      return _remoteDB.deleteBudget(categoryId, currentPeriod);
+    } else {
+      // Logika lokal hapus berdasarkan ID unik budget
+      return _localDB.deleteBudget(
+        categoryId,
+      ); // 'categoryId' di sini adalah 'budget.id' dari UI
+    }
   }
 }
 
-final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
-  final db = ref.watch(appDatabaseProvider);
-  return TransactionRepository(db);
+// --- PROVIDER UNTUK DATA SOURCES ---
+final localDataSourceProvider = Provider<LocalDataSource>((ref) {
+  final db = ref.watch(drift_db.appDatabaseProvider);
+  return LocalDataSource(db);
 });
 
-// final transactionListStreamProvider =
-//     StreamProvider.autoDispose<List<TransactionWithCategory>>((ref) {
-//       final repository = ref.watch(transactionRepositoryProvider);
-//       return repository.watchAllTransactions();
-//     });
+final firebaseDataSourceProvider = Provider<FirebaseDataSource>((ref) {
+  return FirebaseDataSource();
+});
 
-final monthlySummaryStreamProvider =
-    StreamProvider.autoDispose<Map<String, double>>((ref) {
-      final repository = ref.watch(transactionRepositoryProvider);
-      return repository.watchMonthlySummary();
-    });
+// --- PROVIDER REPOSITORY HIBRIDA ---
+final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
+  final localDB = ref.watch(localDataSourceProvider);
+  final remoteDB = ref.watch(firebaseDataSourceProvider);
+
+  final authState = ref.watch(authStateProvider);
+  final isCloudMode = authState.value != null;
+  final userId = authState.value?.uid;
+
+  return TransactionRepository(localDB, remoteDB, isCloudMode, userId);
+});
