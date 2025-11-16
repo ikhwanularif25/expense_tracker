@@ -107,7 +107,7 @@ class FirebaseDataSource {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchCloudCategories() {
-    return _getCategoriesCollection().orderBy('name').snapshots();
+    return _getCategoriesCollection().snapshots();
   }
 
   // --- FUNGSI BARU: Tambah kategori ke cloud ---
@@ -140,6 +140,36 @@ class FirebaseDataSource {
       debugPrint("Error deleting category from Firestore: $e");
     }
   }
+
+  Future<void> batchMigrateCategories(
+    List<Map<String, dynamic>> categories,
+  ) async {
+    final batch = _firestore.batch();
+    final collection = _getCategoriesCollection();
+
+    for (var data in categories) {
+      final docId = data['id'].toString();
+      batch.set(collection.doc(docId), data);
+    }
+    await batch.commit();
+  }
+
+  // FUNGSI BARU: Migrasi Transaksi (Batch)
+  Future<void> batchMigrateTransactions(
+    List<Map<String, dynamic>> transactions,
+  ) async {
+    final batch = _firestore.batch();
+    final collection = _getTransactionsCollection();
+
+    for (var data in transactions) {
+      // PERBAIKAN: Buat referensi dokumen baru (dgn ID acak)
+      final docRef = collection.doc();
+      // Gunakan 'set' pada referensi tersebut, bukan 'add'
+      batch.set(docRef, data);
+    }
+    await batch.commit();
+  }
+
   Future<void> setBudget(int categoryId, double amount, int period) async {
     try {
       // Buat ID dokumen kustom agar 'categoryId' & 'period' unik

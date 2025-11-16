@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+// Import 'drift' untuk 'Value' dan 'drift_db' dengan prefix
 import 'package:drift/drift.dart' as drift;
-import 'package:flutter_svg/flutter_svg.dart'; // Pastikan sudah add flutter_svg
-import '../../../services/local_db/drift_db.dart';
+import 'package:expense_tracker/src/services/local_db/drift_db.dart'
+    as drift_db;
+import 'package:flutter_svg/flutter_svg.dart';
+// Import repository
 import '../data/transaction_repository.dart';
 
 class AddCategoryScreen extends ConsumerStatefulWidget {
-  // 1. Terima parameter opsional untuk mode edit
-  final Category? categoryToEdit;
+  final drift_db.Category? categoryToEdit;
 
   const AddCategoryScreen({super.key, this.categoryToEdit});
 
@@ -43,7 +45,6 @@ class _AddCategoryScreenState extends ConsumerState<AddCategoryScreen> {
   @override
   void initState() {
     super.initState();
-    // 2. Isi form jika dalam mode edit
     if (widget.categoryToEdit != null) {
       final cat = widget.categoryToEdit!;
       _nameController.text = cat.name;
@@ -59,26 +60,22 @@ class _AddCategoryScreenState extends ConsumerState<AddCategoryScreen> {
     super.dispose();
   }
 
+  // --- FUNGSI 'SIMPAN' YANG SUDAH DIPERBAIKI ---
   void _saveCategory() async {
     if (_formKey.currentState!.validate()) {
       final repo = ref.read(transactionRepositoryProvider);
 
       if (widget.categoryToEdit == null) {
         // --- MODE TAMBAH BARU ---
-        // Kita perlu akses langsung ke DB untuk insert Companion,
-        // atau buat fungsi insertCategory di repo (lebih baik).
-        // Untuk konsistensi dengan kode sebelumnya, kita akses DB langsung di sini sementara:
-        final database = ref.read(appDatabaseProvider);
-        await database
-            .into(database.categories)
-            .insert(
-              CategoriesCompanion.insert(
-                name: _nameController.text,
-                color: _selectedColor,
-                iconPath: _selectedIcon,
-                isExpense: drift.Value(_isExpense),
-              ),
-            );
+        // Buat 'companion' untuk insert
+        final entry = drift_db.CategoriesCompanion.insert(
+          name: _nameController.text,
+          color: _selectedColor,
+          iconPath: _selectedIcon,
+          isExpense: drift.Value(_isExpense),
+        );
+        // Panggil Repository (yang akan simpan ke lokal DAN cloud)
+        await repo.addCategory(entry);
       } else {
         // --- MODE EDIT ---
         final updatedCategory = widget.categoryToEdit!.copyWith(
@@ -87,7 +84,7 @@ class _AddCategoryScreenState extends ConsumerState<AddCategoryScreen> {
           iconPath: _selectedIcon,
           isExpense: _isExpense,
         );
-        // Panggil fungsi update di repo
+        // Panggil Repository (yang akan update lokal DAN cloud)
         await repo.updateCategory(updatedCategory);
       }
 
@@ -96,6 +93,7 @@ class _AddCategoryScreenState extends ConsumerState<AddCategoryScreen> {
       }
     }
   }
+  // --- AKHIR FUNGSI PERBAIKAN ---
 
   @override
   Widget build(BuildContext context) {

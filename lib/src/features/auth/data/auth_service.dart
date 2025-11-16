@@ -12,30 +12,29 @@ class AuthService {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   // Fungsi Login dengan Google
-  Future<User?> signInWithGoogle() async {
+  Future<(User? user, bool isNewUser)> signInWithGoogle() async {
     try {
-      // 1. Memulai alur Google Sign-In
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        return null; // Pengguna membatalkan
+        return (null, false); // Batal
       }
 
-      // 2. Mendapatkan detail autentikasi (INI ADALAH FUTURE, BUTUH AWAIT)
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
-      // 3. Membuat kredensial Firebase
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // 4. Login ke Firebase
       final userCredential = await _auth.signInWithCredential(credential);
-      return userCredential.user;
+
+      // Ambil status 'isNewUser' dari hasil login
+      final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
+
+      return (userCredential.user, isNewUser); // Kembalikan tuple
     } catch (e) {
       debugPrint("Error Google Sign-In: $e");
-      return null;
+      return (null, false);
     }
   }
 

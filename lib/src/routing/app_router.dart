@@ -36,34 +36,35 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: true, // Aktifkan untuk debug navigasi
     // Bagian 'redirect' inilah yang menjadi "Penjaga"
     redirect: (BuildContext context, GoRouterState state) {
-      // Dapatkan status login
-      // true = ada user login, false = null (belum login)
       final isLoggedIn = authState.value != null;
-      // Dapatkan path yang sedang dituju
-      final location = state.matchedLocation;
+      final isGuest = ref.watch(guestModeProvider);
+      final isAllowedInApp = isLoggedIn || isGuest;
 
-      // Daftar rute yang boleh diakses publik (sebelum login)
+      final location = state.matchedLocation;
       final isPublicRoute =
           (location == '/splash' ||
           location == '/onboarding' ||
           location == '/welcome');
 
-      // Jika pengguna adalah tamu atau sudah login
-      final isAllowedInApp = isLoggedIn || isGuest;
+      // --- LOGIKA BARU UNTUK MENCEGAH RACE CONDITION ---
+      // 1. Jika kita sedang dalam proses login di WelcomeScreen...
+      if (location == '/welcome' && isLoggedIn) {
+        // JANGAN REDIRECT. Biarkan WelcomeScreen menyelesaikan async-nya
+        // dan menavigasi secara manual.
+        return null;
+      }
+      // --- AKHIR LOGIKA BARU ---
 
-      // --- LOGIKA REDIRECT ---
-
-      // 1. Jika pengguna sudah login/tamu TAPI mencoba kembali ke rute publik
+      // 2. Jika pengguna sudah login/tamu TAPI mencoba kembali ke rute publik
       if (isAllowedInApp && isPublicRoute) {
         return '/'; // Alihkan ke Dashboard
       }
 
-      // 2. Jika pengguna BELUM login/tamu DAN mencoba mengakses rute privat
+      // 3. Jika pengguna BELUM login/tamu DAN mencoba mengakses rute privat
       if (!isAllowedInApp && !isPublicRoute) {
         return '/welcome'; // Paksa ke WelcomeScreen
       }
 
-      // 3. Jika tidak ada kondisi di atas, izinkan (return null)
       return null;
     },
 
